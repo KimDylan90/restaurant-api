@@ -13,8 +13,13 @@ let restaurants = [
   },
   {
     name: 'Restaurant B',
-    address: '456 Elm Street',
+    address: '456 Main Road',
     category: 'Greek'
+  },
+  {
+    name: 'Restaurant C',
+    address: '789 Boulevard',
+    category: 'Turkish'
   }
 ];
 
