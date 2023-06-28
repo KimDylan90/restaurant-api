@@ -44,7 +44,7 @@ function createRestaurant(req, res) {
   res.status(201).json(newRestaurant);
 }
 
-// Get a specific restaurant by name
+// Get restauran by name
 function getRestaurantByName(req, res) {
   const { name } = req.params;
   const restaurant = restaurants.find(restaurant => restaurant.name === name);
@@ -56,12 +56,12 @@ function getRestaurantByName(req, res) {
   res.json(restaurant);
 }
 
-// Update a specific restaurant by name
+// Update restaurant by name
 function updateRestaurantByName(req, res) {
   const { name } = req.params;
   const { address, category } = req.body;
 
-  // Check if the restaurant exists
+  // Check if restaurant exists
   const existingRestaurant = restaurants.find(restaurant => restaurant.name === name);
   if (!existingRestaurant) {
     return res.status(404).json({ error: 'Restaurant not found.' });
