@@ -1,35 +1,38 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 app.use(bodyParser.json());
 
-// In-memory restaurant list
-let restaurants = [
-  {
-    name: 'Restaurant A',
-    address: '123 Main Street',
-    category: 'Italian'
-  },
-  {
-    name: 'Restaurant B',
-    address: '456 Main Road',
-    category: 'Greek'
-  },
-  {
-    name: 'Restaurant C',
-    address: '789 Boulevard',
-    category: 'Turkish'
-  }
-];
+// Connect to SQLite database
+const db = new sqlite3.Database(':memory:');
+
+// Create restaurants table in the database
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS restaurants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      address TEXT,
+      category TEXT
+    )
+  `);
+});
 
 // Get all restaurants
-function getAllRestaurants(req, res) {
-  res.json(restaurants);
-}
+app.get('/restaurants', (req, res) => {
+  db.all('SELECT * FROM restaurants', (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to retrieve restaurants from the database.' });
+    }
+
+    res.json(rows);
+  });
+});
 
 // Create a new restaurant
-function createRestaurant(req, res) {
+app.post('/restaurant', (req, res) => {
   const { name, address, category } = req.body;
 
   // Check if all required fields are present
@@ -37,70 +40,92 @@ function createRestaurant(req, res) {
     return res.status(400).json({ error: 'Name, address, and category are required.' });
   }
 
-  // Check if the restaurant already exists
-  const existingRestaurant = restaurants.find(restaurant => restaurant.name === name);
-  if (existingRestaurant) {
-    return res.status(400).json({ error: 'Restaurant already exists.' });
-  }
+  // Insert new restaurant into the database
+  const stmt = db.prepare('INSERT INTO restaurants (name, address, category) VALUES (?, ?, ?)');
+  stmt.run(name, address, category, function (err) {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to insert restaurant into the database.' });
+    }
 
-  const newRestaurant = { name, address, category };
-  restaurants.push(newRestaurant);
+    res.status(201).json({ id: this.lastID, name, address, category });
+  });
 
-  res.status(201).json(newRestaurant);
-}
+  stmt.finalize();
+});
 
-// Get restauran by name
-function getRestaurantByName(req, res) {
-  const { name } = req.params;
-  const restaurant = restaurants.find(restaurant => restaurant.name === name);
+// Get a specific restaurant by ID
+app.get('/restaurant/:id', (req, res) => {
+  const { id } = req.params;
 
-  if (!restaurant) {
-    return res.status(404).json({ error: 'Restaurant not found.' });
-  }
+  db.get('SELECT * FROM restaurants WHERE id = ?', id, (err, row) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to retrieve restaurant from the database.' });
+    }
 
-  res.json(restaurant);
-}
+    if (!row) {
+      return res.status(404).json({ error: 'Restaurant not found.' });
+    }
 
-// Update restaurant by name
-function updateRestaurantByName(req, res) {
-  const { name } = req.params;
-  const { address, category } = req.body;
+    res.json(row);
+  });
+});
 
-  // Check if restaurant exists
-  const existingRestaurant = restaurants.find(restaurant => restaurant.name === name);
-  if (!existingRestaurant) {
-    return res.status(404).json({ error: 'Restaurant not found.' });
-  }
+// Update a specific restaurant by ID
+app.put('/restaurant/:id', (req, res) => {
+  const { id } = req.params;
+  const { name, address, category } = req.body;
 
-  // Update the restaurant object
-  existingRestaurant.address = address || existingRestaurant.address;
-  existingRestaurant.category = category || existingRestaurant.category;
+  // Check if the restaurant exists
+  db.get('SELECT * FROM restaurants WHERE id = ?', id, (err, row) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to retrieve restaurant from the database.' });
+    }
 
-  res.json(existingRestaurant);
-}
+    if (!row) {
+      return res.status(404).json({ error: 'Restaurant not found.' });
+    }
 
-// Delete a specific restaurant by name
-function deleteRestaurantByName(req, res) {
-  const { name } = req.params;
+    // Update the restaurant in the database
+    const stmt = db.prepare('UPDATE restaurants SET name = ?, address = ?, category = ? WHERE id = ?');
+    stmt.run(name, address, category, id, function (err) {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to update restaurant in the database.' });
+      }
 
-  // Find the index of the restaurant to delete
-  const restaurantIndex = restaurants.findIndex(restaurant => restaurant.name === name);
-  if (restaurantIndex === -1) {
-    return res.status(404).json({ error: 'Restaurant not found.' });
-  }
+      res.json({ id, name, address, category });
+    });
 
-  // Remove the restaurant from the list
-  const deletedRestaurant = restaurants.splice(restaurantIndex, 1)[0];
+    stmt.finalize();
+  });
+});
 
-  res.json(deletedRestaurant);
-}
+// Delete a specific restaurant by ID
+app.delete('/restaurant/:id', (req, res) => {
+  const { id } = req.params;
 
-// Routes
-app.get('/restaurants', getAllRestaurants);
-app.post('/restaurant', createRestaurant);
-app.get('/restaurant/:name', getRestaurantByName);
-app.put('/restaurant/:name', updateRestaurantByName);
-app.delete('/restaurant/:name', deleteRestaurantByName);
+  // Check if the restaurant exists
+  db.get('SELECT * FROM restaurants WHERE id = ?', id, (err, row) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to retrieve restaurant from the database.' });
+    }
+
+    if (!row) {
+      return res.status(404).json({ error: 'Restaurant not found.' });
+    }
+
+    // Delete the restaurant from the database
+    const stmt = db.prepare('DELETE FROM restaurants WHERE id = ?');
+    stmt.run(id, function (err) {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to delete restaurant from the database.' });
+      }
+
+      res.json(row);
+    });
+
+    stmt.finalize();
+  });
+});
 
 // Start the server
 app.listen(3000, () => {
